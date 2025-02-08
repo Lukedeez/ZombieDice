@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zombie Dice Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f4f4f4;
+        }
+        #game-container {
+            margin: 20px auto;
+            width: 600px;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        #lobby-section, #game-section {
+            display: none;
+        }
+        .btn {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        #dice-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        .dice {
+            margin: 0 5px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+        }
+        .brain { background-color: green; color: white; }
+        .shotgun { background-color: red; color: white; }
+        .footstep { background-color: yellow; color: black; }
+        #timer {
+            font-size: 20px;
+            margin-top: 20px;
+            color: #ff5722;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="lobby-section">
+            <h2>Zombie Dice Game</h2>
+            <button class="btn" onclick="createLobby()">Create Lobby</button>
+            <input type="text" id="lobby-code-input" placeholder="Enter Lobby Code">
+            <button class="btn" onclick="joinLobby()">Join Lobby</button>
+            <div id="lobby-status"></div>
+        </div>
+        
+        <div id="game-section">
+            <h2>Game Lobby: <span id="lobby-code"></span></h2>
+            <div id="players-list">
+                <h3>Players & Brains:</h3>
+            </div>
+            <div id="dice-container"></div>
+            <button class="btn" id="start-game-btn" style="display: none;" onclick="startGame()">Start Game</button>
+            <button class="btn" id="roll-dice-btn" style="display: none;" onclick="rollDice()">Roll Dice</button>
+            <button class="btn" id="end-turn-btn" style="display: none;" onclick="saveBrainsAndEndTurn()">End Turn</button>
+            <div id="game-status"></div>
+            <div id="timer"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
