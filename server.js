@@ -28,6 +28,7 @@ function initializeGameState() {
         turnOrder: [],
         currentPlayerIndex: 0,
         currentPlayerId: null,
+        hostId: null,
         gameState: 'waiting',
         gameOver: false,
         dicePool: [
@@ -145,15 +146,27 @@ function rollDiceForPlayer(lobbyCode, playerId) {
 
     console.log(`🎲 Player ${playerId} rolled:`, rollResult);
 
+    let allBrains = lobby.playerStats[playerId].brains + lobby.savedBrains[playerId];
+    if (allBrains >= 13) {
+        lobby.savedBrains[playerId] = allBrains;
+    }
+
+    io.in(lobbyCode).emit('diceRolled', { rollResult, rolledDice, playerId, playerStats: lobby.playerStats[playerId], savedBrains: lobby.savedBrains[playerId] });
+
     // 🚨 If player gets 3 shotguns, they lose all brains collected this round and turn ends
     if (lobby.playerStats[playerId].shotguns >= 3) {
         console.log("💀 Player got 3 shotguns! Ending turn...");
-        io.to(playerId).emit('youLost', { rollResult, message: "💀 You got 3 shotguns! You lose this round!" });
+        io.to(playerId).emit('youLost', { rollResult, rolledDice, message: "💀 You got 3 shotguns! You lose this round!" });
         endTurn(lobbyCode, playerId, false);
         return;
     }
 
-    io.in(lobbyCode).emit('diceRolled', { rollResult, playerId, playerStats: lobby.playerStats[playerId], savedBrains: lobby.savedBrains[playerId] });
+    if (lobby.savedBrains[playerId] >= 13) {
+        console.log("Player got 13 brains! Ending game.");
+        endTurn(lobbyCode, playerId, true);
+        return;
+    }
+
 }
 
 
@@ -228,43 +241,63 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
         if (!lobby.savedBrains[previousPlayerId]) {
             lobby.savedBrains[previousPlayerId] = 0;
         }
-        lobby.savedBrains[previousPlayerId] += lobby.playerStats[previousPlayerId].brains;
 
         // check to see if winner
         if(lobby.savedBrains[previousPlayerId] >= 13) {
             lobby.gameOver = true;
+            const winner = lobby.players.find(p => p.id === previousPlayerId);
+            const winnerName = winner ? winner.name : "Unknown Player";
+
+            // ✅ Send the winner's name instead of just the ID
+            //io.in(lobbyCode).emit('gameOver', { winner: winnerName, host: lobby.hostId, players: lobby.players });
+            io.in(lobbyCode).emit('gameOver', {
+                winner: winnerName,
+                host: lobby.hostId,
+                players: lobby.players.map(p => ({
+                    name: p.name,
+                    brains: lobby.savedBrains[p.id] || 0 // ✅ Ensure brains exist
+                }))
+            });
+
+            console.log(`🏆 Game Over! Winner: ${winnerName} (${previousPlayerId})`);
+            return;
         }
+
+        // update after check because it gets added if greater than 13
+        lobby.savedBrains[previousPlayerId] += lobby.playerStats[previousPlayerId].brains;
+
+        // Send updated scores
+        //io.in(lobbyCode).emit('updateScores', { savedBrains: lobby.savedBrains });
+        io.in(lobbyCode).emit('updateScores', {
+            savedBrains: lobby.savedBrains,
+            players: lobby.players.map(p => ({
+                id: p.id,
+                name: p.name,
+                brains: lobby.savedBrains[p.id] || 0 // Ensure 0 if not set
+            }))
+        });
 
     } else {
         console.log(`💀 Player ${previousPlayerId} lost all brains this round due to 3 shotguns!`);
         lobby.playerStats[previousPlayerId].brains = 0; // 🚨 Reset brains if they lost
     }
 
-    if (lobby.gameOver) {
-        io.in(lobbyCode).emit('gameOver', { winner: previousPlayerId });
-        console.log(`Game Over: Winner ${previousPlayerId}!`);
-    } else {
     // Reset temporary stats (Shotguns, Footsteps)
-        lobby.playerStats[previousPlayerId].shotguns = 0;
-        lobby.playerStats[previousPlayerId].footsteps = 0;
+    lobby.playerStats[previousPlayerId].shotguns = 0;
+    lobby.playerStats[previousPlayerId].footsteps = 0;
 
-        // Move to next player
-        lobby.currentPlayerIndex = (lobby.currentPlayerIndex + 1) % lobby.turnOrder.length;
-        const nextPlayerId = lobby.turnOrder[lobby.currentPlayerIndex];
+    // Move to next player
+    lobby.currentPlayerIndex = (lobby.currentPlayerIndex + 1) % lobby.turnOrder.length;
+    const nextPlayerId = lobby.turnOrder[lobby.currentPlayerIndex];
 
-        // Update the current player
-        lobby.currentPlayerId = nextPlayerId;
+    // Update the current player
+    lobby.currentPlayerId = nextPlayerId.id;
 
-        console.log(`✅ Turn ended for ${previousPlayerId}. Next player: ${nextPlayerId}`);
+    console.log(`✅ Turn ended for ${previousPlayerId}. Next player: ${nextPlayerId}`);
 
-        // Notify all players
-        io.in(lobbyCode).emit('turnEnded', { previousPlayerId });
-        io.in(lobbyCode).emit('turnStarted', { currentPlayerId: nextPlayerId });
-
-        // Send updated scores
-        io.in(lobbyCode).emit('updateScores', { savedBrains: lobby.savedBrains });
-    }
-    
+    // Notify all players
+    io.in(lobbyCode).emit('turnEnded', { previousPlayerId });
+    io.in(lobbyCode).emit('turnStarted', { currentPlayerId: nextPlayerId.id, lobbyCode: lobbyCode }); 
 }
 
 
@@ -279,43 +312,47 @@ io.on('connection', (socket) => {
         console.log(`Event received: ${event}`, args);
     });
 
-    socket.on('createLobby', () => {
+    socket.on('createLobby', ({ playerName }) => {
         const lobbyCode = Math.random().toString(36).substr(2, 5);
         lobbies[lobbyCode] = initializeGameState();
-        lobbies[lobbyCode].players.push(socket.id); // Ensure the host is added as a player
+        lobbies[lobbyCode].players.push({ id: socket.id, name: playerName }); // Ensure the host is added as a player
         lobbies[lobbyCode].turnOrder.push(socket.id); // Host also needs to be in the turn order
         lobbies[lobbyCode].currentPlayerIndex = 0;
         lobbies[lobbyCode].currentPlayerId = socket.id;
         lobbies[lobbyCode].code = lobbyCode;
+        lobbies[lobbyCode].hostId = socket.id;
 
         socket.join(lobbyCode);
         socket.emit('lobbyCreated', { lobbyCode, hostId: socket.id });
     });
 
 
-    socket.on('joinLobby', (lobbyCode) => {
+    socket.on('joinLobby', ( { lobbyCode, playerName } ) => {
+        console.log("joinLobby: "+playerName);
         if (lobbies[lobbyCode]) {
-            if (!lobbies[lobbyCode].players.includes(socket.id)) {
-                lobbies[lobbyCode].players.push(socket.id);
-                lobbies[lobbyCode].turnOrder.push(socket.id);
+            const lobby = lobbies[lobbyCode]; // ✅ Define lobby before using it
 
-                let lobby = lobbies[lobbyCode];
-
-                // ✅ Ensure playerStats is initialized when joining
+            if (!lobby.players.some(p => p.id === socket.id)) {
+                lobby.players.push({ id: socket.id, name: playerName });
+                lobby.turnOrder.push(socket.id);
+                
+                // Ensure player stats exist
                 if (!lobby.playerStats) {
                     lobby.playerStats = {};
                 }
-                if (!lobby.playerStats[socket.id]) {
-                    console.log(`⚠️ Initializing player stats for new player ${socket.id}`);
-                    lobby.playerStats[socket.id] = { brains: 0, shotguns: 0, footsteps: 0 };
-                }
+                lobby.playerStats[socket.id] = { brains: 0, shotguns: 0, footsteps: 0 };
             }
+
             socket.join(lobbyCode);
+            console.log(`🔹 Player joined lobby ${lobbyCode}: ${playerName}`);
 
-            console.log(`🔹 Player joined lobby ${lobbyCode}:`, socket.id);
-            console.log(`🔹 Current players in lobby ${lobbyCode}:`, lobbies[lobbyCode].players);
-
-            io.in(lobbyCode).emit('playerJoined', { players: lobbies[lobbyCode].players, lobbyCode: lobbyCode });
+            // ✅ Now `lobby` is properly defined before using it
+            io.in(lobbyCode).emit('playerJoined', {
+                players: lobby.players.map(p => ({
+                    name: p.name,
+                    brains: lobby.playerStats[p.id] ? lobby.playerStats[p.id].brains : 0 // ✅ Ensure brains exist
+                }))
+            });
         } else {
             socket.emit('lobbyNotFound');
         }
@@ -353,8 +390,8 @@ io.on('connection', (socket) => {
                 if (lobby.turnOrder.length > 0) {
                     lobby.gameState = 'playing';
                     const firstPlayerId = lobby.turnOrder[0];
-                    io.in(lobbyCode).emit('gameStarted', { hostId: firstPlayerId, turnOrder: lobby.turnOrder });
-                    io.in(lobbyCode).emit('turnStarted', { currentPlayerId: firstPlayerId, lobbyCode: lobby.code });
+                    io.in(lobbyCode).emit('gameStarted', { hostId: firstPlayerId.id, turnOrder: lobby.turnOrder });
+                    io.in(lobbyCode).emit('turnStarted', { currentPlayerId: firstPlayerId.id, lobbyCode: lobbyCode });
                     console.log('Game started. First player:', firstPlayerId);
                 } else {
                     console.error("Error: Turn order is empty, can't start game!");

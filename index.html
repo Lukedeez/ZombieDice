@@ -37,10 +37,14 @@
             margin: 20px 0;
         }
         .dice {
-            margin: 0 5px;
-            padding: 20px;
-            border: 1px solid #ddd;
-            background-color: #fff;
+            display: inline-block;
+            margin: 5px;
+            padding: 5px;
+        }
+        .dice-image {
+            width: 60px; /* Adjust as needed */
+            height: 60px;
+            border-radius: 5px;
         }
         .brain { background-color: green; color: white; }
         .shotgun { background-color: red; color: white; }
@@ -50,12 +54,15 @@
             margin-top: 20px;
             color: #ff5722;
         }
+
+
     </style>
 </head>
 <body>
     <div id="game-container">
         <div id="lobby-section">
             <h2>Zombie Dice Game</h2>
+            <input type="text" id="player-name-input" placeholder="Enter Your Name">
             <button class="btn" onclick="createLobby()">Create Lobby</button>
             <input type="text" id="lobby-code-input" placeholder="Enter Lobby Code">
             <button class="btn" onclick="joinLobby()">Join Lobby</button>
@@ -72,7 +79,9 @@
             <button class="btn" id="roll-dice-btn" style="display: none;" onclick="rollDice()">Roll Dice</button>
             <button class="btn" id="end-turn-btn" style="display: none;" onclick="saveBrainsAndEndTurn()">End Turn</button>
             <div id="game-status"></div>
+            <div id="player-status"></div>
             <div id="timer"></div>
+
         </div>
     </div>
 
