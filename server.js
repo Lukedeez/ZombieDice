@@ -31,6 +31,7 @@ function initializeGameState() {
         hostId: null,
         gameState: 'waiting',
         gameOver: false,
+        spectators: [], // ✅ Initialize spectators array
         dicePool: [
             'green', 'green', 'green', 'green', 'green', 'green',
             'yellow', 'yellow', 'yellow', 'yellow',
@@ -148,7 +149,7 @@ function rollDiceForPlayer(lobbyCode, playerId) {
 
     let allBrains = lobby.playerStats[playerId].brains + lobby.savedBrains[playerId];
     if (allBrains >= 13) {
-        lobby.savedBrains[playerId] = allBrains;
+        //lobby.savedBrains[playerId] = allBrains;
     }
 
     io.in(lobbyCode).emit('diceRolled', { rollResult, rolledDice, playerId, playerStats: lobby.playerStats[playerId], savedBrains: lobby.savedBrains[playerId] });
@@ -161,7 +162,7 @@ function rollDiceForPlayer(lobbyCode, playerId) {
         return;
     }
 
-    if (lobby.savedBrains[playerId] >= 13) {
+    if (allBrains >= 13) {
         console.log("Player got 13 brains! Ending game.");
         endTurn(lobbyCode, playerId, true);
         return;
@@ -219,6 +220,8 @@ function reshuffleDice(lobby) {
 
 
 function endTurn(lobbyCode, playerId, saveBrains = false) {
+    let message = '';
+
     if (!lobbies[lobbyCode] || !lobbies[lobbyCode].turnOrder.length) {
         console.error("❌ Error: Cannot end turn, turn order is empty.");
         return;
@@ -232,9 +235,15 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
         return;
     }
 
+    // ✅ Get the next player's name
+    const previousPlayer = lobby.players.find(p => p.id === previousPlayerId);
+    const previousPlayerName = previousPlayer ? previousPlayer.name : "Unknown Player";
+
     // 🧠 Save brains only if player ended turn voluntarily
     if (saveBrains) {
         console.log(`🧠 Player ${previousPlayerId} saved ${lobby.playerStats[previousPlayerId].brains} brains!`);
+        message = `Player ${previousPlayerName} saved ${lobby.playerStats[previousPlayerId].brains} brains!`;
+
         if (!lobby.savedBrains) {
             lobby.savedBrains = {};
         }
@@ -242,15 +251,21 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
             lobby.savedBrains[previousPlayerId] = 0;
         }
 
+        // update after check because it gets added if greater than 13
+        lobby.savedBrains[previousPlayerId] += lobby.playerStats[previousPlayerId].brains;
+
+        console.log("endTurn: "+lobby.savedBrains[previousPlayerId]);
+
         // check to see if winner
-        if(lobby.savedBrains[previousPlayerId] >= 13) {
+        if( lobby.savedBrains[previousPlayerId] >= 13) {
             lobby.gameOver = true;
             const winner = lobby.players.find(p => p.id === previousPlayerId);
             const winnerName = winner ? winner.name : "Unknown Player";
-
+            
             // ✅ Send the winner's name instead of just the ID
             //io.in(lobbyCode).emit('gameOver', { winner: winnerName, host: lobby.hostId, players: lobby.players });
             io.in(lobbyCode).emit('gameOver', {
+                currentPlayerId: lobby.currentPlayerId,
                 winner: winnerName,
                 host: lobby.hostId,
                 players: lobby.players.map(p => ({
@@ -260,15 +275,17 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
             });
 
             console.log(`🏆 Game Over! Winner: ${winnerName} (${previousPlayerId})`);
+
+            // ✅ Reset the game while keeping players in the lobby
+            resetLobbyForNewGame(lobbyCode);
+
             return;
         }
-
-        // update after check because it gets added if greater than 13
-        lobby.savedBrains[previousPlayerId] += lobby.playerStats[previousPlayerId].brains;
 
         // Send updated scores
         //io.in(lobbyCode).emit('updateScores', { savedBrains: lobby.savedBrains });
         io.in(lobbyCode).emit('updateScores', {
+            currentPlayerId: lobby.currentPlayerId,
             savedBrains: lobby.savedBrains,
             players: lobby.players.map(p => ({
                 id: p.id,
@@ -279,26 +296,96 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
 
     } else {
         console.log(`💀 Player ${previousPlayerId} lost all brains this round due to 3 shotguns!`);
-        lobby.playerStats[previousPlayerId].brains = 0; // 🚨 Reset brains if they lost
+        message = `Player ${previousPlayerName} lost all brains this round due to 3 shotguns!`;
     }
 
     // Reset temporary stats (Shotguns, Footsteps)
     lobby.playerStats[previousPlayerId].shotguns = 0;
     lobby.playerStats[previousPlayerId].footsteps = 0;
+    lobby.playerStats[previousPlayerId].brains = 0; // 🚨 Reset brains if they lost
 
     // Move to next player
     lobby.currentPlayerIndex = (lobby.currentPlayerIndex + 1) % lobby.turnOrder.length;
     const nextPlayerId = lobby.turnOrder[lobby.currentPlayerIndex];
 
-    // Update the current player
-    lobby.currentPlayerId = nextPlayerId.id;
+    // ✅ Get the next player's name
+    const nextPlayer = lobby.players.find(p => p.id === nextPlayerId);
+    const nextPlayerName = nextPlayer ? nextPlayer.name : "Unknown Player";
 
-    console.log(`✅ Turn ended for ${previousPlayerId}. Next player: ${nextPlayerId}`);
+    // Update the current player
+    lobby.currentPlayerId = nextPlayerId;
+
+    console.log(`✅ Turn ended for ${previousPlayerId}. Next player: ${nextPlayerName}`);
 
     // Notify all players
     io.in(lobbyCode).emit('turnEnded', { previousPlayerId });
-    io.in(lobbyCode).emit('turnStarted', { currentPlayerId: nextPlayerId.id, lobbyCode: lobbyCode }); 
+    io.in(lobbyCode).emit('turnStarted', { 
+                            message: message,
+                            currentPlayerId: nextPlayerId,
+                            lobbyCode: lobbyCode,
+                            players: lobby.players.map(p => ({
+                                id: p.id,
+                                name: p.name,
+                                brains: lobby.savedBrains[p.id] || 0 // Ensure 0 if not set
+                            })),
+                            name: nextPlayerName
+                        }); 
 }
+
+
+function resetLobbyForNewGame(lobbyCode) {
+    if (!lobbies[lobbyCode]) return;
+
+    const lobby = lobbies[lobbyCode];
+
+    console.log(`🔄 Resetting lobby ${lobbyCode} for a new game...`);
+
+    lobby.gameState = 'waiting';
+
+    // ✅ Reset game state but keep players
+    lobby.gameOver = false;
+    lobby.currentPlayerIndex = 0;
+    lobby.turnOrder = [...lobby.players.map(p => p.id)]; // ✅ Ensure correct player order
+    lobby.currentPlayerId = lobby.turnOrder[0]; // ✅ Start with the first player
+
+    // ✅ Reset player stats
+    lobby.players.forEach(player => {
+        lobby.playerStats[player.id] = {
+            brains: 0,
+            shotguns: 0,
+            footsteps: 0
+        };
+        lobby.savedBrains[player.id] = 0;
+    });
+
+    // ✅ Move spectators to players for the new game
+    lobby.spectators.forEach(spectatorId => {
+        console.log("---- spectators: "+spectatorId.name+" "+spectatorId.id);
+        //lobby.players.push({ id: spectatorId, name: spectatorId.name });
+        lobby.players.push(spectatorId);
+        lobby.turnOrder.push(spectatorId);
+        lobby.playerStats[spectatorId] = { brains: 0, shotguns: 0, footsteps: 0 };
+    });
+    lobby.spectators = []; // ✅ Clear spectators
+
+    // update specator count
+    io.in(lobbyCode).emit('updateSpectators', { count: lobby.spectators.length });
+
+    // ✅ Inform players the game has been reset
+    io.in(lobbyCode).emit('gameReset', { 
+        host: lobby.hostId, 
+        currentPlayerId: lobby.currentPlayerId,
+        players: lobby.players.map(p => ({
+            id: p.id,
+            name: p.name,
+            brains: 0
+        }))
+    });
+
+    console.log(`✅ Game reset complete! First player: ${lobby.currentPlayerId}`);
+}
+
+
 
 
 
@@ -313,7 +400,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('createLobby', ({ playerName }) => {
-        const lobbyCode = Math.random().toString(36).substr(2, 5);
+        const lobbyCode = Math.random().toString(36).substr(2, 5).toUpperCase();
         lobbies[lobbyCode] = initializeGameState();
         lobbies[lobbyCode].players.push({ id: socket.id, name: playerName }); // Ensure the host is added as a player
         lobbies[lobbyCode].turnOrder.push(socket.id); // Host also needs to be in the turn order
@@ -329,9 +416,45 @@ io.on('connection', (socket) => {
 
     socket.on('joinLobby', ( { lobbyCode, playerName } ) => {
         console.log("joinLobby: "+playerName);
+
         if (lobbies[lobbyCode]) {
             const lobby = lobbies[lobbyCode]; // ✅ Define lobby before using it
 
+            playerName = sanitizeName(playerName);
+            // ✅ Generate a unique name if there's a duplicate
+            playerName = generateUniqueName(lobby, playerName);
+
+            // ✅ Prevent duplicate names
+            if (lobby.players.find(p => p.name === playerName)) {
+                socket.emit("errorMessage", { message: "Name already taken. Choose another one." });
+                return;
+            }
+
+            // ✅ Ensure spectators array exists
+            if (!lobby.spectators) {
+                lobby.spectators = [];
+            }
+
+            // ✅ If the game is in progress, add as a spectator
+            if (lobby.gameState === 'playing') {
+                console.log(`👀 Player ${socket.id} joined as a spectator in lobby ${lobbyCode}`);
+                lobby.spectators.push({ id: socket.id, name: playerName }); // ✅ Add them as a spectator
+
+                socket.join(lobbyCode);
+                socket.emit('spectatorJoined', { 
+                    players: lobby.players.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        brains: lobby.savedBrains[p.id] || 0
+                    })),
+                    currentPlayerId: lobby.currentPlayerId
+                });
+                // ✅ Notify all players that a spectator joined
+                io.in(lobbyCode).emit('updateSpectators', { count: lobby.spectators.length });
+                return;
+            }
+
+            // ✅ Otherwise, allow them to join as a player
             if (!lobby.players.some(p => p.id === socket.id)) {
                 lobby.players.push({ id: socket.id, name: playerName });
                 lobby.turnOrder.push(socket.id);
@@ -348,6 +471,7 @@ io.on('connection', (socket) => {
 
             // ✅ Now `lobby` is properly defined before using it
             io.in(lobbyCode).emit('playerJoined', {
+                currentPlayerId: lobby.currentPlayerId,
                 players: lobby.players.map(p => ({
                     name: p.name,
                     brains: lobby.playerStats[p.id] ? lobby.playerStats[p.id].brains : 0 // ✅ Ensure brains exist
@@ -359,6 +483,24 @@ io.on('connection', (socket) => {
     });
 
 
+    function sanitizeName(name) {
+        return name.replace(/[^a-zA-Z0-9 _-]/g, "").trim().substring(0, 15);
+    }
+
+    function generateUniqueName(lobby, baseName) {
+        let uniqueName = baseName;
+        let counter = 1;
+
+        // ✅ Keep adding numbers until the name is unique
+        while (lobby.players.find(p => p.name === uniqueName)) {
+            uniqueName = `${baseName} ${counter}`;
+            counter++;
+        }
+
+        return uniqueName;
+    }
+
+
 
     socket.on('saveBrainsAndEndTurn', ({ lobbyCode }) => {
         console.log(`🛑 Player ${socket.id} chose to save brains and end their turn.`);
@@ -368,42 +510,51 @@ io.on('connection', (socket) => {
             return;
         }
 
-        endTurn(lobbyCode, socket.id, true); // ✅ Save brains because the player ended turn voluntarily
+        //endTurn(lobbyCode, socket.id, true); // ✅ Save brains because the player ended turn voluntarily
     });
 
 
 
     socket.on('startGame', (lobbyCode) => {
-        console.log(`startGame event received from ${socket.id} in lobby ${lobbyCode}`);
-        
-        if (lobbies[lobbyCode]) {
-            const lobby = lobbies[lobbyCode];
-            console.log('Current players in lobby:', lobby.players.length);
-            
-            // Ensure there are at least 2 players in the lobby to start
-            if (lobby.players.length >= 2) {
-                lobby.turnOrder = [...lobby.players];
-                lobby.currentPlayerIndex = 0;
-                console.log('Turn order:', lobby.turnOrder);
-                
-                // If there are players, start the game
-                if (lobby.turnOrder.length > 0) {
-                    lobby.gameState = 'playing';
-                    const firstPlayerId = lobby.turnOrder[0];
-                    io.in(lobbyCode).emit('gameStarted', { hostId: firstPlayerId.id, turnOrder: lobby.turnOrder });
-                    io.in(lobbyCode).emit('turnStarted', { currentPlayerId: firstPlayerId.id, lobbyCode: lobbyCode });
-                    console.log('Game started. First player:', firstPlayerId);
-                } else {
-                    console.error("Error: Turn order is empty, can't start game!");
-                }
-            } else {
-                socket.emit('errorMessage', { message: "Not enough players to start the game." });
-                console.log("Not enough players to start the game.");
-            }
-        } else {
-            console.error(`Lobby ${lobbyCode} does not exist.`);
-            socket.emit('errorMessage', { message: "Lobby not found." });
+        if (!lobbies[lobbyCode]) {
+            console.error(`❌ Lobby ${lobbyCode} does not exist.`);
+            return;
         }
+
+        const lobby = lobbies[lobbyCode];
+
+        if (lobby.players.length < 2) {
+            socket.emit('errorMessage', { message: "Not enough players to start the game." });
+            return;
+        }
+
+        console.log(`🎲 Host started a new game in lobby ${lobbyCode}`);
+
+        lobby.gameState = 'playing';
+
+        // ✅ Reset turn order and start the first turn
+        lobby.turnOrder = [...lobby.players.map(p => p.id)];
+        lobby.currentPlayerIndex = 0;
+        lobby.currentPlayerId = lobby.turnOrder[0]; // ✅ Make sure first player is set
+
+        // ✅ Get the next player's name
+        const currentPlayer = lobby.players.find(p => p.id === lobby.currentPlayerId);
+        const currentPlayerName = currentPlayer ? currentPlayer.name : "Unknown Player";
+
+
+        // ✅ Send game start event
+        io.in(lobbyCode).emit('gameStarted', { 
+            turnOrder: lobby.turnOrder,
+            currentPlayerId: lobby.currentPlayerId,
+            players: lobby.players.map(p => ({
+                name: p.name,
+                brains: lobby.playerStats[p.id] ? lobby.playerStats[p.id].brains : 0 // ✅ Ensure brains exist
+            }))
+        });
+
+        io.in(lobbyCode).emit('turnStarted', { players: lobby.players, currentPlayerId: lobby.currentPlayerId, lobbyCode: lobbyCode, name: currentPlayerName });
+
+        console.log(`✅ Game restarted! First player: ${lobby.currentPlayerId}`);
     });
 
 
@@ -417,11 +568,90 @@ io.on('connection', (socket) => {
 
 
     socket.on('disconnect', () => {
-        console.log(`User disconnected: ${socket.id}`);
+        console.log(`❌ Player disconnected: ${socket.id}`);
+
+        // Find the lobby the player was in
+        let playerLobbyCode = null;
+        for (const code in lobbies) {
+            if (lobbies[code].players.find(p => p.id === socket.id)) {
+                playerLobbyCode = code;
+                break;
+            }
+        }
+
+        if (!playerLobbyCode) return; // Player was not in any lobby
+
+        const lobby = lobbies[playerLobbyCode];
+
+        // Remove the player from the lobby
+        lobby.players = lobby.players.filter(p => p.id !== socket.id);
+        delete lobby.playerStats[socket.id];
+        delete lobby.savedBrains[socket.id];
+
+        // ✅ Remove player from turnOrder
+        const removedIndex = lobby.turnOrder.indexOf(socket.id);
+        if (removedIndex !== -1) {
+            lobby.turnOrder.splice(removedIndex, 1);
+        }
+
+        console.log(`🔹 Updated players in lobby ${playerLobbyCode}:`, lobby.players);
+        console.log(`🔄 Updated turn order:`, lobby.turnOrder);
+
+        // Check if the disconnected player was the current player
+        if (lobby.currentPlayerId === socket.id) {
+            console.log(`🔄 Player ${socket.id} was the current player. Switching turns...`);
+
+            // Move to the next player
+            if (lobby.players.length > 0) {
+                lobby.currentPlayerIndex = (lobby.currentPlayerIndex) % lobby.players.length;
+                lobby.currentPlayerId = lobby.players[lobby.currentPlayerIndex].id;
+                let currentPlayerName = lobby.players[lobby.currentPlayerIndex].name;
+
+                io.in(playerLobbyCode).emit('turnStarted', { 
+                    currentPlayerId: lobby.currentPlayerId, 
+                    lobbyCode: playerLobbyCode,
+                    players: lobby.players.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        brains: lobby.savedBrains[p.id] || 0
+                    })),
+                    name: currentPlayerName
+                });
+            } else {
+                console.log("🏁 No players left in the game. Ending lobby.");
+                delete lobbies[playerLobbyCode];
+                return;
+            }
+        }
+
+        // ✅ If the host leaves, assign a new host
+        if (socket.id === lobby.hostId) {
+            if (lobby.players.length > 0) {
+                lobby.hostId = lobby.players[0].id;
+                console.log(`👑 New host assigned: ${lobby.hostId}`);
+            } else {
+                console.log("🏁 No players left. Deleting lobby.");
+                delete lobbies[playerLobbyCode];
+                return;
+            }
+        }
+
+
+        // ✅ Notify all players that someone disconnected
+        io.in(playerLobbyCode).emit('playerDisconnected', { 
+            playerId: socket.id, 
+            players: lobby.players.map(p => ({
+                id: p.id,
+                name: p.name,
+                brains: lobby.savedBrains[p.id] || 0
+            })),
+            host: lobby.hostId
+        });
     });
 
 
-    socket.on('nextTurn', ({ playerId, lobbyCode }) => {
+
+    socket.on('nextTurn', ({ playerId, lobbyCode, saveBrains }) => {
         if (!lobbies[lobbyCode]) {
             console.error("Lobby not found:", lobbyCode);
             return;
@@ -436,7 +666,7 @@ io.on('connection', (socket) => {
         }
 
         console.log(`🔄 Player ${playerId} is ending their turn...`);
-        endTurn(lobbyCode, playerId); // Call existing function to switch turns
+        endTurn(lobbyCode, playerId, saveBrains); // Call existing function to switch turns
     });
 
 
