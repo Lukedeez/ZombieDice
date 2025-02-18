@@ -4,257 +4,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Zombie Dice Game</title>
     <style>
-        body {
-            font-family: cursive;
-            font-weight: 400;
-            font-style: normal;
-            font-size: 25px;
-            text-align: center;
-            background-color: #f4f4f4;
-            margin: 0;
-            padding: 0;
-
-            display: grid;
-            grid-template-columns: auto;
-            grid-template-rows: auto;
-            grid-template-areas: 
-                "blood"
-                "logo"
-                "game";
-            justify-items: center;
-            align-items: center;
-
-
-            background-color: #513833;
-            background-image: url('images/layout/z_hand.png');
-            background-position: right bottom;
-            background-repeat: no-repeat;
-            background-attachment: fixed;
-            background-size: 500px;
-        }
-
-            #blood_drip {
-                grid-area: blood;
-                margin: 0;
-                background-image: url('images/layout/blood_dripping.png');
-                background-position: top;
-                background-repeat: repeat-x;
-                background-size: contain;
-                width: 100%;
-                height: 100px;
-            }
-
-            #logo {
-                grid-area: logo;
-                width: 400px;
-                height: auto;
-                margin-top: -30px;
-                    position: relative;
-                    z-index: -5;
-            }
-                #logo img {
-                    border-bottom: 1px solid black;
-                    width: 100%;
-                    height: auto;
-
-                }
-
-        input {
-            border-radius: 4px;
-            height: 30px;
-            width: 200px;
-        }
-        input:focus {
-            outline: none;
-            border-color: rgb(209, 32, 19);
-            
-        }
-
-        #game-container {
-            grid-area: game;
-            display: grid;
-            grid-template-columns: auto;
-            grid-template-rows: auto;
-            grid-template-areas: 
-                "star-section"
-                "lobby-section"
-                "game-section";
-            justify-items: center;
-            align-items: center;
-
-            margin: 0px auto;
-            max-width: 600px;
-            width: auto;
-            background-color: #fff;
-            border: 1px solid #222;
-            padding: 20px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-        }
-
-        #start-container {
-            grid-area: star-section;
-            display: grid;
-            align-items: center;
-            grid-auto-flow: column;
-            column-gap: 8px;
-            justify-content: center;
-        }
-
-
-
-        #lobby-section {
-            grid-area: lobby-section;
-            display: grid;
-            grid-template-columns: auto;
-            grid-template-rows: auto;
-            grid-template-areas: 
-                "create"
-                "join"
-                "lobby";
-            justify-items: center;
-            align-items: center;
-            grid-auto-flow: column;
-            justify-content: center;
-            grid-row-gap: 10px;
-            column-gap: 10px;
-            padding-top: 15px;
-        }
-        #lobby-section > div {
-            margin-left: 5px;
-            padding-bottom: 0;
-        }
-            #lobby-section > div > label {
-                margin-left: 6px;
-            }
-
-            #create-lobby-btn {
-                grid-area: create;
-            }
-            #lobby-code-input {
-                grid-area: lobby;
-
-            }
-            #join-lobby-btn {
-                grid-area: join;
-            }
-
-        #game-section {
-            grid-area: game-section;
-            display: grid;
-
-            padding-top: 20px;
-        }
-            #game-section > h2 {
-                padding: 0;
-                margin: 0;
-            }
-        .btn {
-            display: inline-block;
-            margin: 10px;
-            padding: 10px 20px;
-            background-color: rgb(209, 32, 19);
-            font-family: cursive;
-            font-size: 25px;
-            color: white;
-            border: none;
-            cursor: pointer;
-            border-radius: 4px;
-            width: 200px;
-        }
-        .btn:hover {
-            background-color: #222;
-        }
-        #dice-container {
-            display: flex;
-            justify-content: center;
-            margin: 20px 0;
-        }
-        .dice {
-            display: inline-block;
-            margin: 5px;
-            padding: 5px;
-        }
-        .dice-image {
-            width: 60px; /* Adjust as needed */
-            height: 60px;
-            border-radius: 5px;
-        }
-        .dice-small {
-            height: 20px;
-        }
-        .brain { background-color: green; color: white; }
-        .shotgun { background-color: red; color: white; }
-        .footstep { background-color: yellow; color: black; }
-        #timer {
-            font-size: 20px;
-            margin-top: 20px;
-            color: #ff5722;
-        }
-        .current-player {
-            font-weight: bold;
-            color: gold; /* Highlight in gold */
-        }
-
-
-
-        @media screen and (max-width: 600px) {
-            body {
-                font-size: 20px; /* Increase readability */
-                text-align: center;
-            }
-
-            #start-container {
-                display: block;
-                padding-top: 10px;
-            }
-            #lobby-section > div {
-                margin: 0;
-            }
-
-            #player-name-input,
-            #lobby-code-input {
-                width: 90%;
-                padding: 10px;
-            }
-
-            #game-container {
-                width: 90%; /* Make it fit smaller screens */
-                padding: 10px;
-            }
-
-            #logo {
-                width: 80%; /* Scale down the logo */
-            }
-
-            #game-section, #lobby-section {
-                width: 100%;
-            }
-
-            .btn {
-                width: 100%; /* Make buttons full width for easy tapping */
-                padding: 12px;
-                font-size: 18px;
-            }
-
-            input {
-                width: 100%;
-                padding: 10px;
-                font-size: 16px;
-            }
-
-            #dice-container {
-                flex-wrap: wrap; /* Allow dice to stack on smaller screens */
-            }
-
-            .dice-image {
-                width: 50px; /* Reduce dice size for small screens */
-                height: 50px;
-            }
-        }
-
-
     </style>
+    <link href="styles.css" rel="stylesheet" type="text/css"/>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Protest+Riot&display=swap" rel="stylesheet">
@@ -284,22 +35,35 @@
     
         <div id="game-section" style="display: none;">
             <h2>Game Lobby: <span id="lobby-code"></span></h2>
-            <div id="spectator-count"></div>
-            <div id="spectator-message"></div>
-            <div id="game-status"></div>
+            <div id="spectator">
+                <div id="spectator-count"></div>
+                <div id="spectator-message"></div>
+            </div>
+            <div id="status">
+                <div id="game-status"></div>
+                <div id="dice-status"></div>
+            </div>
             <div id="players-list"></div>
             <div id="dice-container"></div>
-            <button class="btn" id="start-game-btn" style="display: none;" onclick="startGame()">Start Game</button>
-            <button class="btn" id="roll-dice-btn" style="display: none;" onclick="rollDice()">Roll Dice</button>
-            <button class="btn" id="end-turn-btn" style="display: none;" onclick="saveBrainsAndEndTurn()">End Turn</button>
-            <div id="dice-status"></div>
+            <div id="btns">
+                <button class="btn" id="start-game-btn" style="display: none;" onclick="startGame()">Start Game</button>
+                <button class="btn" id="roll-dice-btn" style="display: none;" onclick="rollDice()">Roll Dice</button>
+                <button class="btn" id="end-turn-btn" style="display: none;" onclick="saveBrainsAndEndTurn()">End Turn</button>
+                <button id="mute-btn" class="btn">🔊 Sound On</button>
+            </div>
             <div id="player-status"></div>
-            <div id="timer"></div>
         </div>
 
     </div>
 
-    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <audio id="click-sound" src="sounds/Dice_Click.mp3"></audio>
+    <audio id="rolling-sound" src="sounds/Dice_Roll.mp3"></audio>
+    <audio id="land-sound" src="sounds/Dice_Land.mp3"></audio>
+    <audio id="shotgun-sound" src="sounds/Shotgun.mp3"></audio>
+    <audio id="brain-sound" src="sounds/Brain.mp3"></audio>
+
+    <script src="socket.io.js"></script>
     <script src="client.js"></script>
+
 </body>
 </html>

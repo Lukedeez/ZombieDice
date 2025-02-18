@@ -15,6 +15,8 @@ let currentLobbyCode = null; // ✅ Define globally
 let turnTimer = null; // Timer reference
 const TURN_TIME_LIMIT = 30000; // 30 seconds per turn
 let gameEnded = false;
+let diceRollCnt = 0;    // rolls of the dice, per turn
+let isMuted = false; // ✅ Track mute state
 
 // EVENTS //
 
@@ -97,6 +99,35 @@ let gameEnded = false;
         console.error("Clipboard API is not supported in this environment.");
     }
 
+
+    // ✅ Function to toggle mute
+    function toggleMute() {
+        isMuted = !isMuted;
+
+        // ✅ Update button text/icon
+        const muteBtn = document.getElementById('mute-btn');
+        muteBtn.textContent = isMuted ? "🔇 Sound Off" : "🔊 Sound On";
+
+        // ✅ Mute/unmute all sounds
+        document.querySelectorAll("audio").forEach(audio => {
+            audio.muted = isMuted;
+        });
+
+        // ✅ Save mute state (optional)
+        localStorage.setItem("muteState", isMuted);
+    }
+
+    // ✅ Event Listener for Mute Button
+    document.getElementById("mute-btn").addEventListener("click", toggleMute);
+
+    // ✅ Load mute state from localStorage (if available)
+    if (localStorage.getItem("muteState") === "true") {
+        isMuted = true;
+        document.getElementById("mute-btn").textContent = "🔇 Sound Off";
+        document.querySelectorAll("audio").forEach(audio => {
+            audio.muted = true;
+        });
+    }
     
 
 
@@ -136,10 +167,11 @@ let gameEnded = false;
         }
 
         // Make sure the game section becomes visible
+        const startContainer = document.getElementById('start-container');
         const gameSection = document.getElementById('game-section');
         const lobbySection = document.getElementById('lobby-section');
         if (gameSection) {
-            document.getElementById('start-container').style.display = 'none';
+            startContainer.style.display = 'none';
             gameSection.style.display = 'grid'; // Show the game area
             lobbySection.style.display = 'none'; // hide the lobby area
         } else {
@@ -200,7 +232,8 @@ let gameEnded = false;
 
         let shotgunCount = 0;
         let footstepCount = 0;
-
+        let tempRoll = diceRollCnt;
+/*
         // ✅ Loop through each rolled die to display images
         data.rolledDice.forEach(die => {
             const diceElement = document.createElement('div');
@@ -217,20 +250,85 @@ let gameEnded = false;
             diceElement.appendChild(diceImage);
             diceContainer.appendChild(diceElement);
         });
+*/
+
+        let diceElements = []; // Store dice elements for animation
+
+        // ✅ Step 2: Start rolling sound
+        let rollingSound = document.getElementById('rolling-sound');
+        if (!isMuted) rollingSound.play();
+
+        // ✅ Step 1: Create dice placeholders that will animate
+        data.rolledDice.forEach( (die, index) => {
+            const diceElement = document.createElement('div');
+            diceElement.classList.add('dice');
+
+            const diceImage = document.createElement('img');
+            diceImage.classList.add('dice-image', 'spin'); // ✅ Start with spinning effect
+
+            // Set initial random dice image (before final result)
+            let randomFace = ["brain", "shotgun", "footsteps"][Math.floor(Math.random() * 3)];
+            diceImage.src = `images/dice/${die.color}_${randomFace}.png`;
+            diceImage.alt = "Rolling...";
+
+            diceElement.appendChild(diceImage);
+            diceContainer.appendChild(diceElement);
+            diceElements.push({ element: diceImage, color: die.color, finalOutcome: die.outcome });
+        });
+
+        // ✅ Step 2: Create rolling effect using setInterval()
+        let spinInterval = setInterval(() => {
+            diceElements.forEach(die => {
+                let randomFace = ["brain", "shotgun", "footsteps"][Math.floor(Math.random() * 3)];
+                die.element.src = `images/dice/${die.color}_${randomFace}.png`;
+            });
+        }, 100); // Change every 100ms for a fast spin effect
+
+        // ✅ Step 3: Stop spinning after 2 seconds, then apply bouncing & flipping
+        setTimeout(() => {
+            clearInterval(spinInterval); // Stop spinning
+
+            diceElements.forEach( (die, index) => {
+                die.element.classList.remove('spin'); // Remove spinning
+                die.element.classList.add('flip'); // Add flipping effect
+
+                setTimeout(() => {
+                    die.element.classList.remove('flip'); // Remove flip
+                    die.element.classList.add('bounce'); // Add bounce effect
+                    die.element.src = `images/dice/${die.color}_${die.finalOutcome}.png`; // Show actual result
+                    die.element.alt = die.finalOutcome;
+                    // ✅ Update game status
+                    //if (shotgunCount < 3) {
+                        document.getElementById('dice-status').innerHTML = 
+                            `Roll: ${tempRoll} | <img class='dice-small' src='images/dice/green_brain.png'> ${data.playerStats.brains} | <img class='dice-small' src='images/dice/red_shotgun.png'> ${data.playerStats.shotguns} | <img class='dice-small' src='images/dice/yellow_footsteps.png'> ${data.playerStats.footsteps}`;
+                    //}
+
+                    // ✅ Step 6: Stop rolling sound and play dice land sound
+                    if (index === data.rolledDice.length - 1) { // Ensure it plays only once
+                        rollingSound.pause();
+                        rollingSound.currentTime = 0;                      
+                        if (!isMuted) document.getElementById('land-sound').play();
+                    }
+
+                }, 800); // Flip effect lasts 0.8s before bouncing
+            });
+
+        }, 1800); // Stop spin after 2 seconds
 
         // ✅ Show "End Turn" button now that the player has rolled
         //if (socket.id === currentPlayerId) {
         //    document.getElementById('end-turn-btn').style.display = 'block';
         //}
 
-        // ✅ Update game status
-        document.getElementById('dice-status').innerHTML = 
-            `<img class='dice-small' src='images/dice/green_brain.png'> ${data.playerStats.brains} | <img class='dice-small' src='images/dice/red_shotgun.png'> ${data.playerStats.shotguns} | <img class='dice-small' src='images/dice/yellow_footsteps.png'> ${data.playerStats.footsteps}`;
-
+        diceRollCnt++;
+        tempRoll = diceRollCnt;
 
         // ✅ Check for 3 shotguns (force end turn)
         shotgunCount = data.playerStats.shotguns;
         if (shotgunCount >= 3) {
+            rollingSound.pause();
+            document.getElementById('land-sound').pause();
+            if (!isMuted) document.getElementById('shotgun-sound').play();
             console.log("💀 Player eliminated! Switching turns.");
             switchToNextPlayer(false);
             return;
@@ -249,16 +347,18 @@ let gameEnded = false;
             document.getElementById('end-turn-btn').style.display = (socket.id === currentPlayerId) ? 'block' : 'none';
         }
         
+        
+
     });
-
-
 
 
 
 
     // Listen for turn updates
     socket.on('turnStarted', (data) => {
+        
         document.getElementById('dice-container').innerHTML = '';
+        document.getElementById('dice-status').innerHTML = "";
         console.log("🎲 [Update] Turn started for:", data.currentPlayerId);
         
         // ✅ Ensure lobby code is set when turn starts
@@ -282,15 +382,19 @@ let gameEnded = false;
         document.getElementById('end-turn-btn').style.display = 'none';
 
         // ✅ Update game status message
-        document.getElementById('player-status').textContent = 
-            isMyTurn ? "🎲 It's your turn! Roll the dice." 
-                     : `⏳ Waiting for Player: ${data.name}`;  // ${currentPlayerId}
+        document.getElementById('player-status').innerHTML = 
+            isMyTurn ? "<b>It's your turn! Roll the dice.</b>" 
+                     : `<b>Waiting for ${data.name} to roll...</b>`;  // ${currentPlayerId}
 
         //if (isMyTurn) {
-            document.getElementById('game-status').textContent = data.message;
-        //}
+        //    document.getElementById('dice-status').innerHTML = "";
+        //}    
+
+        document.getElementById('game-status').textContent = data.message;
 
         console.log(isMyTurn ? "✅ It's MY turn!" : "⏳ Waiting for another player...");
+
+        diceRollCnt = 0;
     });
 
 
@@ -435,6 +539,7 @@ let gameEnded = false;
         }
 
         socket.emit('joinLobby', { lobbyCode, playerName });
+        document.getElementById('start-container').style.display = 'none';
         document.getElementById('game-section').style.display = 'grid';
         document.getElementById('lobby-section').style.display = 'none';
         document.getElementById('game-status').textContent = 'Waiting for host to start...';
@@ -448,9 +553,10 @@ let gameEnded = false;
     }
 
     function updatePlayersList(players, currentPlayerId) {
+        let playerList = "<table><tr><th>Player</th><th><img class='dice-small' src='images/dice/green_brain.png'></th></tr>";
 
         const playersListDiv = document.getElementById("players-list");
-        playersListDiv.innerHTML = "<h3>Players:</h3>"; // ✅ Update to show final scores
+        //playersListDiv.innerHTML = "<h3>Players:</h3>"; // ✅ Update to show final scores
 
         if (players.length === 0) {
             playersListDiv.innerHTML += "<p>No players remaining.</p>";
@@ -458,21 +564,25 @@ let gameEnded = false;
         }
 
         players.forEach(player => {
-            const playerItem = document.createElement("div");
+            //const playerItem = document.createElement("div");
             //alert(player.brains);
             if (player.id === currentPlayerId) {
-                playerItem.innerHTML = `<strong>⭐ ${player.name} ${player.brains ? "<img class='dice-small' src='images/dice/green_brain.png'> "+player.brains : ""}</strong>`;
-                playerItem.style.color = "gold"; // ✅ Change color to highlight current player
+                playerList += `<tr class='current-player'><td>${player.name}</td><td>${player.brains ? player.brains : "0"}</td></tr>`;
+                //playerItem.innerHTML = `<strong>⭐ ${player.name} ${player.brains ? "<img class='dice-small' src='images/dice/green_brain.png'> "+player.brains : ""}</strong>`;
+                //playerItem.style.color = "gold"; // ✅ Change color to highlight current player
                 //playerItem.classList.add("current-player");
             } else {
                 const isCurrentPlayer = (player.id === socket.id);
+                playerList += `<tr><td>${player.name}</td><td>${player.brains ? player.brains : "0"}</td></tr>`;
                 //playerItem.innerHTML = `${isCurrentPlayer ? "⭐ " : ""} ${player.name} ${player.brains ? "<img class='dice-small' src='images/dice/green_brain.png'> "+player.brains : ""} `;
-                playerItem.innerHTML = `${player.name} ${player.brains ? "<img class='dice-small' src='images/dice/green_brain.png'> "+player.brains : ""}`;
+                //playerItem.innerHTML = `${player.name} ${player.brains ? "<img class='dice-small' src='images/dice/green_brain.png'> "+player.brains : ""}`;
             }
             
-            playersListDiv.appendChild(playerItem);
+            //playersListDiv.appendChild(playerItem);
         });
 
+        playerList += "</table>";
+        playersListDiv.innerHTML = playerList;
         console.log("✅ UI updated with final player scores:", players);
     }
 
@@ -485,6 +595,12 @@ let gameEnded = false;
     }
 
     function rollDice() {
+        if(diceRollCnt == 0) {
+            document.getElementById('dice-status').innerHTML = "";
+        }
+        // ✅ Step 1: Play click sound when roll starts
+        if (!isMuted) document.getElementById('click-sound').play();
+
         console.log("My ID:", socket.id, "Current Player ID:", currentPlayerId); // Debugging log
         //if (socket.id !== currentPlayerId || document.getElementById('roll-dice-btn').disabled) {
         if (!currentLobbyCode) {
@@ -520,6 +636,7 @@ let gameEnded = false;
         socket.emit('nextTurn', { playerId: currentPlayerId, lobbyCode: currentLobbyCode, saveBrains: saveBrains });
 
         document.getElementById('dice-container').innerHTML = '';
+        document.getElementById('dice-status').innerHTML = "";
 
         // Disable buttons to prevent actions while waiting
         document.getElementById('roll-dice-btn').style.display = 'none';
@@ -541,6 +658,7 @@ let gameEnded = false;
             return;
         }
 
+        if (!isMuted) document.getElementById('brain-sound').play();
         socket.emit('saveBrainsAndEndTurn', { lobbyCode: currentLobbyCode });
     }
 

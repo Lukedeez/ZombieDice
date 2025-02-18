@@ -242,7 +242,7 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
     // 🧠 Save brains only if player ended turn voluntarily
     if (saveBrains) {
         console.log(`🧠 Player ${previousPlayerId} saved ${lobby.playerStats[previousPlayerId].brains} brains!`);
-        message = `Player ${previousPlayerName} saved ${lobby.playerStats[previousPlayerId].brains} brains!`;
+        message = `${previousPlayerName} saved ${lobby.playerStats[previousPlayerId].brains} brains!`;
 
         if (!lobby.savedBrains) {
             lobby.savedBrains = {};
@@ -296,7 +296,7 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
 
     } else {
         console.log(`💀 Player ${previousPlayerId} lost all brains this round due to 3 shotguns!`);
-        message = `Player ${previousPlayerName} lost all brains this round due to 3 shotguns!`;
+        message = `${previousPlayerName} lost all brains!`;
     }
 
     // Reset temporary stats (Shotguns, Footsteps)
