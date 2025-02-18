@@ -1,4 +1,4 @@
-This is a re-creation of the Zombie Dice game, it uses sockets for multiplayer.
+This is a re-creation of the Zombie Dice game, it is web based and uses sockets for multiplayer.
 
 Eat brains. Don't get shotgunned.
 
