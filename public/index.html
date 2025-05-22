@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="js/jquery-3.6.0.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@latest/build/three.module.js",
+                "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+                "round-box": "https://cdn.jsdelivr.net/npm/three@latest/examples/jsm/geometries/RoundedBoxGeometry.js"
+            }
+        }
+    </script>
+
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Zombie Dice Game</title>
+    <style>
+    </style>
+    <link href="styles.css" rel="stylesheet" type="text/css"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Protest+Riot&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Julee&family=Protest+Riot&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="blood_drip"></div>
+    <div id="logo">
+        <img src="images/layout/logo.jpg" alt='Zombie Dice Game'>
+    </div>
+    <div id="game-container">
+
+        <div id="start-container">
+            <label for="player-name-input">Player Name:</label>
+            <input type="text" id="player-name-input" placeholder="Enter Your Name" autofocus>
+        </div>
+
+        <div id="lobby-section" style="display: none;">
+            <button class="btn" id="create-lobby-btn" >Create Lobby</button>
+            <div>
+                <label for="lobby-code-input">Lobby Code:</label>
+                <input type="text" id="lobby-code-input" placeholder="Enter Lobby Code">
+            </div>
+            <button class="btn" id="join-lobby-btn" onclick="" style="display: none;">Join Lobby</button>
+            <div id="lobby-status"></div>
+        </div>
+    
+        <div id="game-section" style="display: none;">
+            <h2>Game Lobby: <span id="lobby-code"></span></h2>
+            <div id="spectator">
+                <div id="spectator-count"></div>
+                <div id="spectator-message"></div>
+            </div>
+            <div id="status">
+                <div id="game-status"></div>
+                <div id="dice-status"></div>
+            </div>
+            <div id="players-list"></div>
+            <div id="dice-container"></div>
+            <div id="dice" style="display: none;"></div>
+            <div id="btns">
+                <button class="btn" id="start-game-btn" style="display: none;" onclick="">Start Game</button>
+                <button class="btn" id="roll-dice-btn" style="display: none;" onclick="">Roll Dice</button>
+                <button class="btn" id="end-turn-btn" style="display: none;" onclick="">End Turn</button>
+            </div>
+            <div id="player-status"></div>
+            <button id="mute-btn" class="">Sound On</button>
+        </div>
+
+    </div>
+
+    <audio id="click-sound" src="sounds/Dice_Click.mp3"></audio>
+    <audio id="rolling-sound" src="sounds/Dice_Roll.mp3"></audio>
+    <audio id="land-sound" src="sounds/Dice_Land.mp3"></audio>
+    <audio id="shotgun-sound" src="sounds/Shotgun.mp3"></audio>
+    <audio id="brain-sound" src="sounds/Brain.mp3"></audio>
+
+    <script src="socket.io.js"></script>
+    <script type="module" src="client.js"></script>
+
+</body>
+</html>

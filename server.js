@@ -2,7 +2,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-
+const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
@@ -10,16 +10,23 @@ const io = socketIo(server, {
         origin: "http://192.168.1.111:88", // Your web server's URL
         methods: ["GET", "POST"]
     },
-    transports: ['websocket', 'polling'] // Enable both WebSocket and polling
+    transports: ['websocket', 'polling'], // Enable both WebSocket and polling
+    maxHttpBufferSize: 1e8 // 100MB
 });
 
 const lobbies = {};
 
 app.use(cors());
 
+app.use(express.static(path.join(__dirname, 'public')));
+
 app.get('/', (req, res) => {
-    res.send('Welcome to the Dice Game!');
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
+
+//app.get('/', (req, res) => {
+//    res.send('Welcome to the Dice Game!');
+//});
 
 
 function initializeGameState() {
@@ -83,6 +90,56 @@ function getRandomDice(lobbyCode, num) {
 }
 
 
+function rollDiceForServer(lobbyCode, playerId) {
+    if (!lobbies[lobbyCode]) {
+        console.error("❌ Lobby not found:", lobbyCode);
+        return;
+    }
+
+    const lobby = lobbies[lobbyCode];
+
+    if (lobby.currentPlayerId !== playerId) {
+        console.warn("⛔ Not their turn! Rejecting roll request.");
+        return;
+    }
+    // ✅ Ensure playerStats exists
+    if (!lobby.playerStats) {
+        lobby.playerStats = {};
+    }
+    if (!lobby.playerStats[playerId]) {
+        console.log(`⚠️ Initializing player stats for ${playerId}`);
+        lobby.playerStats[playerId] = { brains: 0, shotguns: 0, footsteps: 0 };
+    }
+
+    // ✅ Ensure diceHistory exists
+    if (!lobby.diceHistory) {
+        lobby.diceHistory = {};
+    }
+    if (!lobby.diceHistory[playerId]) {
+        lobby.diceHistory[playerId] = [];
+    }
+    
+    let diceToRoll;
+ 
+    const existingFootsteps = lobby.diceHistory[playerId]
+                                .filter(d => d.outcome === 'footsteps')
+                                .map(d => d.color);
+    const newDiceNeeded = 3 - existingFootsteps.length;
+    
+    
+    if (newDiceNeeded > 0) {
+        const newDice = getRandomDice(lobbyCode, newDiceNeeded);
+        diceToRoll = [...existingFootsteps, ...newDice];
+    } else {
+        diceToRoll = getRandomDice(lobbyCode, 3);
+    }
+
+    // 
+    //
+    console.log(`Dice to Roll: ${diceToRoll}`);
+    io.in(lobbyCode).emit('showDiceToRoll', {color: diceToRoll} );  // show 2d dice to lobby
+    io.to(playerId).emit('diceToRoll', {color: diceToRoll} );       // show 3d dice to player
+}
 
 
 function rollDiceForPlayer(lobbyCode, playerId) {
@@ -123,7 +180,6 @@ function rollDiceForPlayer(lobbyCode, playerId) {
     const newDiceNeeded = 3 - existingFootsteps.length;
     
     
-
     if (newDiceNeeded > 0) {
         const newDice = getRandomDice(lobbyCode, newDiceNeeded);
         diceToRoll = [...existingFootsteps, ...newDice];
@@ -131,11 +187,14 @@ function rollDiceForPlayer(lobbyCode, playerId) {
         diceToRoll = getRandomDice(lobbyCode, 3);
     }
 
+// -- this is where it changes to 3Dice
     const { rollResult, newDice: rolledDice } = rollDice(diceToRoll);
 
     rolledDice.forEach(die => {
         if (die.outcome === 'brain' || die.outcome === 'shotgun') {
             lobby.usedDice.push(die.color);
+        } else if (die.outcome === 'footsteps') {
+            console.log("Saved "+die.color+" footsteps");
         }
     });
 
@@ -157,7 +216,7 @@ function rollDiceForPlayer(lobbyCode, playerId) {
     // 🚨 If player gets 3 shotguns, they lose all brains collected this round and turn ends
     if (lobby.playerStats[playerId].shotguns >= 3) {
         console.log("💀 Player got 3 shotguns! Ending turn...");
-        io.to(playerId).emit('youLost', { rollResult, rolledDice, message: "💀 You got 3 shotguns! You lose this round!" });
+        io.to(playerId).emit('youLost', { rollResult, rolledDice, message: "You got 3 shotguns! You lose this round!" });
         endTurn(lobbyCode, playerId, false);
         return;
     }
@@ -170,7 +229,54 @@ function rollDiceForPlayer(lobbyCode, playerId) {
 
 }
 
+function diceResults(playerId, lobbyCode, rolledDice) {
 
+    let lobby = lobbies[lobbyCode];
+
+    let fcnt = 1;
+    rolledDice.forEach(die => {
+        if (die.outcome === 'brain') {
+            lobby.usedDice.push(die.color);
+            lobby.playerStats[playerId].brains++;
+        } else if (die.outcome === 'shotgun') {
+            lobby.usedDice.push(die.color);
+            lobby.playerStats[playerId].shotguns++;
+        } else if (die.outcome === 'footsteps') {
+            lobby.playerStats[playerId].footsteps = fcnt;
+            fcnt++;
+        }
+        console.log("Saved "+die.color+" "+die.outcome);
+    });
+
+    //lobby.playerStats[playerId].brains += rollResult.brain;
+    //lobby.playerStats[playerId].shotguns += rollResult.shotgun;
+    //lobby.playerStats[playerId].footsteps = rollResult.footsteps;
+
+    lobby.diceHistory[playerId] = rolledDice;
+
+    //console.log(`🎲 Player ${playerId} rolled:`, rollResult);
+
+    let allBrains = lobby.playerStats[playerId].brains + lobby.savedBrains[playerId];
+    if (allBrains >= 13) {
+        //lobby.savedBrains[playerId] = allBrains;
+    }
+
+    io.in(lobbyCode).emit('diceRolled', { rolledDice, playerId, playerStats: lobby.playerStats[playerId], savedBrains: lobby.savedBrains[playerId] });
+
+    // 🚨 If player gets 3 shotguns, they lose all brains collected this round and turn ends
+    if (lobby.playerStats[playerId].shotguns >= 3) {
+        console.log("💀 Player got 3 shotguns! Ending turn...");
+        io.to(playerId).emit('youLost', { rolledDice, message: "You got 3 shotguns! You lose this round!" });
+        endTurn(lobbyCode, playerId, false);
+        return;
+    }
+
+    if (allBrains >= 13) {
+        console.log("Player got 13 brains! Ending game.");
+        endTurn(lobbyCode, playerId, true);
+        return;
+    }
+}
 
 
 
@@ -242,7 +348,7 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
     // 🧠 Save brains only if player ended turn voluntarily
     if (saveBrains) {
         console.log(`🧠 Player ${previousPlayerId} saved ${lobby.playerStats[previousPlayerId].brains} brains!`);
-        message = `${previousPlayerName} saved ${lobby.playerStats[previousPlayerId].brains} brains!`;
+        message = `<b>${previousPlayerName} saved ${lobby.playerStats[previousPlayerId].brains} brains!</b>`;
 
         if (!lobby.savedBrains) {
             lobby.savedBrains = {};
@@ -296,7 +402,7 @@ function endTurn(lobbyCode, playerId, saveBrains = false) {
 
     } else {
         console.log(`💀 Player ${previousPlayerId} lost all brains this round due to 3 shotguns!`);
-        message = `${previousPlayerName} lost all brains!`;
+        message = `<b>${previousPlayerName} lost all brains!</b>`;
     }
 
     // Reset temporary stats (Shotguns, Footsteps)
@@ -375,6 +481,7 @@ function resetLobbyForNewGame(lobbyCode) {
     io.in(lobbyCode).emit('gameReset', { 
         host: lobby.hostId, 
         currentPlayerId: lobby.currentPlayerId,
+        message: "Returning to the lobby for a new game.",
         players: lobby.players.map(p => ({
             id: p.id,
             name: p.name,
@@ -561,7 +668,8 @@ io.on('connection', (socket) => {
     
     socket.on('rollDice', ({ lobbyCode }) => {
         console.log(`🎲 Player ${socket.id} is rolling dice in lobby ${lobbyCode}`);
-        rollDiceForPlayer(lobbyCode, socket.id);
+        //rollDiceForPlayer(lobbyCode, socket.id);  // local server roll
+        rollDiceForServer(lobbyCode, socket.id);    // 3Dice.js dice call
     });
 
 
@@ -595,6 +703,51 @@ io.on('connection', (socket) => {
         }
 
         console.log(`🔹 Updated players in lobby ${playerLobbyCode}:`, lobby.players);
+        console.log(`🔹 Remaining players in ${playerLobbyCode}:`, lobby.players.length);
+
+        // ✅ If only 1 player remains, reset the game and return to the lobby
+        if (lobby.players.length === 1) {
+            const remainingPlayer = lobby.players[0];
+
+            console.log(`🔄 Only one player left in ${playerLobbyCode}. Resetting game...`);
+
+            // Reset the game state
+            lobby.gameOver = false;
+            lobby.currentPlayerId = null;
+            lobby.turnOrder = [];
+            lobby.savedBrains = {};
+            lobby.playerStats = {};
+
+            // Notify the last player that the game has reset
+            //io.to(remainingPlayer.id).emit('gameReset', { message: "All other players left. Returning to the lobby." });
+            io.in(playerLobbyCode).emit('gameReset', { 
+                host: lobby.hostId, 
+                currentPlayerId: lobby.currentPlayerId,
+                message: "Only 1 player remaining. Returning to the lobby.",
+                players: lobby.players.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    brains: 0
+                }))
+            });
+/*
+            // Notify spectators to return to the lobby as well
+            (lobby.spectators || []).forEach(spectatorId => {
+                //io.to(spectatorId).emit('gameReset', { message: "Game ended. Returning to the lobby." });
+                io.to(spectatorId).emit('gameReset', { 
+                    host: lobby.hostId, 
+                    currentPlayerId: lobby.currentPlayerId,
+                    message: "Only 1 player remaining. Returning to the lobby.",
+                    players: lobby.players.map(p => ({
+                        id: p.id,
+                        name: p.name,
+                        brains: 0
+                    }))
+                });
+            });
+*/
+        } 
+
         console.log(`🔄 Updated turn order:`, lobby.turnOrder);
 
         // Check if the disconnected player was the current player
@@ -635,7 +788,7 @@ io.on('connection', (socket) => {
                 return;
             }
         }
-
+                
 
         // ✅ Notify all players that someone disconnected
         io.in(playerLobbyCode).emit('playerDisconnected', { 
@@ -670,6 +823,9 @@ io.on('connection', (socket) => {
     });
 
 
+    socket.on('diceResults', (data) => {
+        diceResults(data.playerId, data.lobbyCode, data.diceResult);
+    });
 
 
 
